@@ -468,27 +468,6 @@ export const StepInspectionForm: React.FC<StepInspectionFormProps> = ({
         )}
       </AnimatePresence>
 
-      {/* Completion Banner if all units in this location are completed */}
-      {isAllLocationCompleted && (
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="p-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-700 text-white shadow-md flex items-center gap-3"
-        >
-          <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
-            <CheckCircle2 className="w-6 h-6 text-white" />
-          </div>
-          <div>
-            <h4 className="text-sm font-extrabold">
-              Seluruh Unit {location === 'RUMDIN' ? 'Rumah Dinas' : 'Istana Wapres'} Lengkap!
-            </h4>
-            <p className="text-xs text-emerald-100 font-medium">
-              Semua {locationUnits.length} unit telah selesai diinspeksi dan tersimpan.
-            </p>
-          </div>
-        </motion.div>
-      )}
-
       {/* Main Dynamic Inspection Form */}
       {activeUnit ? (
         <form onSubmit={handleSubmit} className="space-y-4">
