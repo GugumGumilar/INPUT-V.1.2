@@ -28,7 +28,7 @@ export const StepHome: React.FC<StepHomeProps> = ({
     {
       id: 'PAGI',
       title: 'Shift Pagi',
-      hours: '07:00 — 15:00 WIB',
+      hours: '08:00 — 15:00 WIB',
       icon: Sun,
       accentColor: 'from-amber-400 to-amber-500',
       textColor: 'text-amber-700',
@@ -39,7 +39,7 @@ export const StepHome: React.FC<StepHomeProps> = ({
     {
       id: 'SIANG',
       title: 'Shift Siang',
-      hours: '15:00 — 23:00 WIB',
+      hours: '15:00 — 22:00 WIB',
       icon: CloudSun,
       accentColor: 'from-sky-400 to-blue-500',
       textColor: 'text-sky-700',
@@ -50,7 +50,7 @@ export const StepHome: React.FC<StepHomeProps> = ({
     {
       id: 'MALAM',
       title: 'Shift Malam',
-      hours: '23:00 — 07:00 WIB',
+      hours: '22:00 — 08:00 WIB',
       icon: Moon,
       accentColor: 'from-indigo-500 to-slate-800',
       textColor: 'text-indigo-700',
