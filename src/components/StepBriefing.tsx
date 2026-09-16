@@ -42,7 +42,7 @@ export const StepBriefing: React.FC<StepBriefingProps> = ({ onBack, onShowAlert 
     const currentDay = days[now.getDay()];
     const currentDate = `${now.getDate()} ${months[now.getMonth()]} ${now.getFullYear()}`;
     const hours = now.getHours();
-    const currentShift = (hours >= 7 && hours < 15) ? "Pagi" : (hours >= 14 && hours < 21) ? "Siang" : "Malam";
+    const currentShift = (hours >= 7 && hours < 14) ? "Pagi" : (hours >= 14 && hours < 21) ? "Siang" : "Malam";
 
     setHari(currentDay);
     setTanggal(currentDate);
