@@ -527,45 +527,39 @@ export const StepInspectionForm: React.FC<StepInspectionFormProps> = ({
           />
         </div>
       </div>
-
-      {/* Save Notification Banner */}
+      {/* Auto-redirect overlay when all units for this team are finished */}
       <AnimatePresence>
-        {saveBanner && (
+        {isAutoRedirecting && (
           <motion.div
-            initial={{ opacity: 0, y: -10, scale: 0.97 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -10, scale: 0.97 }}
-            className={`p-3.5 rounded-2xl border flex items-center justify-between gap-3 shadow-sm ${
-              saveBanner.type === 'success'
-                ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
-                : 'bg-rose-50 border-rose-200 text-rose-900'
-            }`}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4"
           >
-            <div className="flex items-center gap-2.5">
-              {saveBanner.type === 'success' ? (
-                <div className="w-7 h-7 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0">
-                  <CheckCheck className="w-4 h-4" />
-                </div>
-              ) : (
-                <div className="w-7 h-7 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0">
-                  <ShieldAlert className="w-4 h-4" />
-                </div>
-              )}
-              <div className="text-xs">
-                <span className="font-bold block">
-                  {saveBanner.type === 'success' ? 'Data Berhasil Disimpan!' : 'Perhatian Saat Menyimpan'}
-                </span>
-                <span className="font-medium text-[11px] opacity-90">
-                  {saveBanner.message}
-                </span>
-              </div>
-            </div>
-            <button
-              onClick={() => setSaveBanner(null)}
-              className="text-xs font-bold opacity-60 hover:opacity-100 px-2 py-1"
+            <motion.div
+              initial={{ scale: 0.9, y: 15 }}
+              animate={{ scale: 1, y: 0 }}
+              className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl border border-slate-100 text-center space-y-4"
             >
-              Tutup
-            </button>
+              <div className="w-16 h-16 rounded-3xl bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto shadow-inner">
+                <CheckCircle2 className="w-8 h-8" />
+              </div>
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 font-mono">
+                  Input Selesai 100%
+                </span>
+                <h3 className="text-base font-extrabold text-slate-900 mt-1">
+                  Seluruh Unit {location === 'RUMDIN' ? 'Rumah Dinas' : 'Istana Wapres'} Lengkap!
+                </h3>
+                <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                  Data berhasil disimpan. Mengalihkan otomatis ke Dashboard...
+                </p>
+              </div>
+              <div className="flex items-center justify-center gap-2 text-xs font-bold text-emerald-700 bg-emerald-50 py-2.5 px-4 rounded-2xl border border-emerald-100">
+                <div className="w-3.5 h-3.5 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+                <span>Menuju Dashboard</span>
+              </div>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
