@@ -34,7 +34,7 @@ interface StepInspectionFormProps {
   dashboardState: Record<string, UnitStatus>;
   dataLengkap: Record<string, InspectionData>;
   onSelectUnit: (unitId: string) => void;
-  onSave: (unitId: string, data: InspectionData) => Promise<{ success: boolean; message: string; jam: string }>;
+  onSave: (unitId: string, data: InspectionData, officersOverride?: string) => Promise<{ success: boolean; message: string; jam: string }>;
   onBack: () => void;
   onGenerateWA?: () => void;
   isSaving: boolean;
@@ -95,18 +95,69 @@ export const StepInspectionForm: React.FC<StepInspectionFormProps> = ({
 }) => {
   // In-memory drafts for all units so switching tabs never loses un-saved input
   const [unitDrafts, setUnitDrafts] = useState<Record<string, InspectionData>>({});
+  const [unitOfficerOverrides, setUnitOfficerOverrides] = useState<Record<string, string[]>>({});
   const [showOfficerModal, setShowOfficerModal] = useState<boolean>(false);
   const [saveBanner, setSaveBanner] = useState<{ type: 'success' | 'error'; message: string; unitName: string } | null>(null);
-  const [isAutoRedirecting, setIsAutoRedirecting] = useState<boolean>(false);
 
   const activeUnit = locationUnits.find((u) => u.id === selectedUnitId) || locationUnits[0];
   const isUPS = activeUnit?.type === 'UPS';
 
-  // Get active unit's form data
-  const currentFormData: InspectionData = 
-    unitDrafts[activeUnit?.id || ''] || 
-    dataLengkap[activeUnit?.id || ''] || 
-    getDefaultDataForUnit(activeUnit);
+  // Menentukan petugas yang ditampilkan untuk unit aktif:
+  // JIKA SUDAH MEMILIH PETUGAS dan Data ingin di EDIT KEMBALI,
+  // maka yang di TAMPILKAN PETUGAS YG DI AWAL INPUT DATA,
+  // KECUALI MEREKA INGIN RUBAH PETUGAS TINGGAL KLIK GANTI PETUGAS
+  const activeOfficers: string[] = React.useMemo(() => {
+    if (!activeUnit) return selectedOfficers || [];
+
+    // 1. Jika user telah merubah petugas secara spesifik via tombol "Ganti Petugas" pada sesi ini
+    if (unitOfficerOverrides[activeUnit.id] && unitOfficerOverrides[activeUnit.id].length > 0) {
+      return unitOfficerOverrides[activeUnit.id];
+    }
+
+    // 2. Jika data sudah pernah diinput sebelumnya (tersimpan di dashboardState atau dataLengkap):
+    // Tampilkan petugas yang di awal input data
+    const initialPetugasStr = dashboardState[activeUnit.id]?.petugas || dataLengkap[activeUnit.id]?.Nama_Petugas;
+    if (initialPetugasStr && typeof initialPetugasStr === 'string' && initialPetugasStr.trim() !== '' && initialPetugasStr.trim() !== '-') {
+      const parts = initialPetugasStr.split(',').map((s) => s.trim()).filter(Boolean);
+      if (parts.length > 0) {
+        return parts;
+      }
+    }
+
+    // 3. Petugas tim dari StepOfficers / selectedOfficers
+    return selectedOfficers && selectedOfficers.length > 0 ? selectedOfficers : [];
+  }, [activeUnit?.id, unitOfficerOverrides, dashboardState, dataLengkap, selectedOfficers]);
+
+  const displayedOfficersText = activeOfficers.length > 0 ? activeOfficers.join(' , ') : (officers || 'Belum dipilih');
+
+  // Get active unit's form data with guaranteed fallback defaults
+  const currentFormData: InspectionData = React.useMemo(() => {
+    if (!activeUnit) return {};
+    const defaults = getDefaultDataForUnit(activeUnit);
+    const saved = (activeUnit && dataLengkap[activeUnit.id]) || {};
+    const draft = (activeUnit && unitDrafts[activeUnit.id]) || {};
+
+    // Filter out invalid/empty/dash values so they never overwrite healthy defaults
+    const cleanSaved: InspectionData = {};
+    Object.entries(saved).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && String(v).trim() !== '' && String(v).trim() !== '-') {
+        cleanSaved[k] = v;
+      }
+    });
+
+    const cleanDraft: InspectionData = {};
+    Object.entries(draft).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && String(v).trim() !== '' && String(v).trim() !== '-') {
+        cleanDraft[k] = v;
+      }
+    });
+
+    return {
+      ...defaults,
+      ...cleanSaved,
+      ...cleanDraft
+    };
+  }, [activeUnit, dataLengkap, unitDrafts]);
 
   const handleChange = (field: string, value: string) => {
     if (!activeUnit) return;
@@ -125,7 +176,6 @@ export const StepInspectionForm: React.FC<StepInspectionFormProps> = ({
   const completedInLocation = locationUnits.filter(
     (u) => dashboardState[u.id]?.status === 'OK'
   ).length;
-  const isAllLocationCompleted = locationUnits.length > 0 && completedInLocation === locationUnits.length;
   const progressPercent = locationUnits.length > 0 ? Math.round((completedInLocation / locationUnits.length) * 100) : 0;
 
   // Handle saving the current unit
@@ -133,13 +183,94 @@ export const StepInspectionForm: React.FC<StepInspectionFormProps> = ({
     e.preventDefault();
     if (!activeUnit) return;
 
-    const finalData = { ...currentFormData };
+    const defaults = getDefaultDataForUnit(activeUnit);
+    const finalData: InspectionData = {
+      ...defaults,
+      ...currentFormData
+    };
+
     if (isUPS) {
       finalData.Backup_Hours = backupConverted.jam;
       finalData.Backup_Minutes = backupConverted.menit;
+    } else {
+      // Penanganan khusus unit-unit ACO agar data tersimpan presisi dan tidak pernah '-'
+      if (activeUnit.id === 'Rumdin_Situbondo') {
+        const closeVal = (!finalData.Status_Sumber_CLOSE || finalData.Status_Sumber_CLOSE === '-') 
+          ? 'GARDU T93' 
+          : finalData.Status_Sumber_CLOSE;
+        const openVal = (!finalData.Status_Sumber_OPEN || finalData.Status_Sumber_OPEN === '-') 
+          ? 'GARDU T10B' 
+          : finalData.Status_Sumber_OPEN;
+        finalData.Status_Sumber_CLOSE = closeVal;
+        finalData.Status_Sumber_OPEN = openVal;
+        finalData.Status_Penyulang_CLOSE = closeVal;
+        finalData.Status_Penyulang_OPEN = openVal;
+      } else if (activeUnit.id === 'Rumdin_Dipo') {
+        const t135Val = (!finalData.Status_T135 || finalData.Status_T135 === '-') 
+          ? 'OPEN' 
+          : finalData.Status_T135;
+        const t15nVal = (!finalData.Status_T15N || finalData.Status_T15N === '-') 
+          ? 'CLOSE' 
+          : finalData.Status_T15N;
+        finalData.Status_T135 = t135Val;
+        finalData.Status_T15N = t15nVal;
+        // Alias agar dibaca oleh berbagai script lama / baru
+        finalData.Status_Sumber_CLOSE = t135Val;
+        finalData.Status_Sumber_OPEN = t15nVal;
+        finalData.Status_Penyulang_CLOSE = t135Val;
+        finalData.Status_Penyulang_OPEN = t15nVal;
+      } else if (activeUnit.id === 'Wapres_Gardu_D126') {
+        const closeVal = (!finalData.Status_Penyulang_CLOSE || finalData.Status_Penyulang_CLOSE === '-') 
+          ? 'P HAYAM WURUK GI GAMBIR LAMA' 
+          : finalData.Status_Penyulang_CLOSE;
+        const openVal = (!finalData.Status_Penyulang_OPEN || finalData.Status_Penyulang_OPEN === '-') 
+          ? 'KOPEL ACO (GH41 P HONGKONG GI BUDI KEMULIAAN)' 
+          : finalData.Status_Penyulang_OPEN;
+        finalData.Status_Penyulang_CLOSE = closeVal;
+        finalData.Status_Penyulang_OPEN = openVal;
+        finalData.Status_Sumber_CLOSE = closeVal;
+        finalData.Status_Sumber_OPEN = openVal;
+      }
+
+      // Pastikan semua parameter status ACO terisi dengan tegas & valid
+      const alarmVal = (!finalData.Global_Alarm || finalData.Global_Alarm === '-') ? 'NORMAL' : finalData.Global_Alarm;
+      const powerVal = (!finalData.Global_Power || finalData.Global_Power === '-') ? 'ON' : finalData.Global_Power;
+      const chargingVal = (!finalData.Global_Charging || finalData.Global_Charging === '-') ? 'YA' : finalData.Global_Charging;
+      const remoteVal = (!finalData.Global_Remote || finalData.Global_Remote === '-') ? 'AUTO' : finalData.Global_Remote;
+      const lampuVal = (!finalData.Global_Lampu || finalData.Global_Lampu === '-') ? 'ON' : finalData.Global_Lampu;
+      const ketVal = (!finalData.Keterangan || finalData.Keterangan === '-') ? 'AMAN TERKENDALI' : finalData.Keterangan;
+
+      finalData.Global_Alarm = alarmVal;
+      finalData.Global_Power = powerVal;
+      finalData.Global_Charging = chargingVal;
+      finalData.Global_Remote = remoteVal;
+      finalData.Global_Lampu = lampuVal;
+      finalData.Keterangan = ketVal;
+
+      // Sediakan alias multi-key agar script Google Apps Script (baik versi baru maupun versi lama) langsung membacanya
+      finalData.Alarm = alarmVal;
+      finalData.Alarm_Status = alarmVal;
+      finalData.Status_Alarm = alarmVal;
+
+      finalData.Power_ACO = powerVal;
+      finalData.Status_Power_ACO = powerVal;
+      finalData.Status_Power = powerVal;
+
+      finalData.Charging_Kubikel = chargingVal;
+      finalData.Status_Charging_Kubikel = chargingVal;
+      finalData.Status_Charging = chargingVal;
+
+      finalData.Remote_Kubikel = remoteVal;
+      finalData.Status_Remote_Kubikel = remoteVal;
+      finalData.Status_Remote = remoteVal;
+
+      finalData.Lampu_Indikator = lampuVal;
+      finalData.Status_Lampu_Indikator = lampuVal;
+      finalData.Status_Lampu = lampuVal;
     }
 
-    const res = await onSave(activeUnit.id, finalData);
+    const officersForSave = activeOfficers.length > 0 ? activeOfficers.join(' , ') : officers;
+    const res = await onSave(activeUnit.id, finalData, officersForSave);
 
     if (res.success) {
       setSaveBanner({
@@ -155,7 +286,7 @@ export const StepInspectionForm: React.FC<StepInspectionFormProps> = ({
         return next;
       });
 
-      // Find next pending unit in this location
+      // Find next pending unit in this location if any
       const pendingUnits = locationUnits.filter(
         (u) => u.id !== activeUnit.id && dashboardState[u.id]?.status !== 'OK'
       );
@@ -165,14 +296,8 @@ export const StepInspectionForm: React.FC<StepInspectionFormProps> = ({
         setTimeout(() => {
           onSelectUnit(pendingUnits[0].id);
         }, 500);
-      } else {
-        // Semua unit di tim ini sudah selesai diinput!
-        // Otomatis kembali ke Dashboard
-        setIsAutoRedirecting(true);
-        setTimeout(() => {
-          onBack();
-        }, 1200);
       }
+      // Jika semua unit sudah selesai atau sedang edit, user tetap di form tanpa pop-up pengalihan
     } else {
       setSaveBanner({
         type: 'error',
@@ -218,17 +343,18 @@ export const StepInspectionForm: React.FC<StepInspectionFormProps> = ({
                 SHIFT {shift}
               </span>
             </div>
-            <div className="flex items-center gap-2 mt-1">
-              <p className="text-xs text-slate-300 font-medium truncate max-w-[220px] sm:max-w-xs">
-                Petugas: <strong className="text-white">{officers || 'Belum dipilih'}</strong>
+            <div className="flex flex-wrap items-center gap-2 mt-1">
+              <p className="text-xs text-slate-300 font-medium">
+                Petugas: <strong className="text-white">{displayedOfficersText}</strong>
               </p>
               <button
                 type="button"
                 onClick={() => setShowOfficerModal(true)}
-                className="text-[10px] font-bold text-sky-400 hover:text-sky-300 underline flex items-center gap-0.5"
+                className="px-2.5 py-1 rounded-xl bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 hover:text-white text-[11px] font-bold transition-all flex items-center gap-1.5 border border-sky-400/30 shadow-xs active:scale-95"
+                title="Klik untuk mengganti personel petugas unit ini"
               >
-                <Edit2 className="w-3 h-3" />
-                <span>Ubah</span>
+                <Edit2 className="w-3.5 h-3.5" />
+                <span>Ganti Petugas</span>
               </button>
             </div>
           </div>
@@ -254,10 +380,15 @@ export const StepInspectionForm: React.FC<StepInspectionFormProps> = ({
       {showOfficerModal && (
         <div className="p-4 rounded-2xl bg-white border border-sky-300 shadow-xl space-y-3">
           <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-            <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-              <Users className="w-4 h-4 text-sky-600" />
-              <span>Pilih / Ganti Personel Petugas ({location === 'RUMDIN' ? 'Rumah Dinas' : 'Istana Wapres'})</span>
-            </h4>
+            <div>
+              <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                <Users className="w-4 h-4 text-sky-600" />
+                <span>Ganti Petugas — {activeUnit?.name}</span>
+              </h4>
+              <p className="text-[10px] text-slate-500 mt-0.5">
+                Pilih atau rubah personel petugas piket untuk unit ini
+              </p>
+            </div>
             <button
               onClick={() => setShowOfficerModal(false)}
               className="text-xs font-bold text-slate-400 hover:text-slate-600 px-2 py-1"
@@ -267,16 +398,21 @@ export const StepInspectionForm: React.FC<StepInspectionFormProps> = ({
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 max-h-48 overflow-y-auto p-1">
             {(PETUGAS || []).map((name) => {
-              const isSelected = (selectedOfficers || []).includes(name);
+              const isSelected = activeOfficers.includes(name);
               return (
                 <button
                   key={name}
                   type="button"
                   onClick={() => {
-                    const current = selectedOfficers || [];
                     const next = isSelected 
-                      ? current.filter((o) => o !== name) 
-                      : [...current, name];
+                      ? activeOfficers.filter((o) => o !== name) 
+                      : [...activeOfficers, name];
+                    if (activeUnit) {
+                      setUnitOfficerOverrides((prev) => ({
+                        ...prev,
+                        [activeUnit.id]: next
+                      }));
+                    }
                     onUpdateOfficers(next);
                   }}
                   className={`p-2 rounded-xl text-left text-[11px] font-bold border transition-all flex items-center justify-between ${
@@ -291,13 +427,16 @@ export const StepInspectionForm: React.FC<StepInspectionFormProps> = ({
               );
             })}
           </div>
-          <div className="flex justify-end pt-1">
+          <div className="flex items-center justify-between pt-1 border-t border-slate-100">
+            <span className="text-[11px] text-slate-500 font-medium">
+              {activeOfficers.length > 0 ? `${activeOfficers.length} personel dipilih` : 'Belum ada petugas'}
+            </span>
             <button
               type="button"
               onClick={() => setShowOfficerModal(false)}
-              className="px-4 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs"
+              className="px-4 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs shadow-sm"
             >
-              Selesai Memilih
+              Selesai Ganti Petugas
             </button>
           </div>
         </div>
@@ -427,43 +566,6 @@ export const StepInspectionForm: React.FC<StepInspectionFormProps> = ({
             >
               Tutup
             </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Auto-redirect overlay when all units for this team are finished */}
-      <AnimatePresence>
-        {isAutoRedirecting && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4"
-          >
-            <motion.div
-              initial={{ scale: 0.9, y: 15 }}
-              animate={{ scale: 1, y: 0 }}
-              className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl border border-slate-100 text-center space-y-4"
-            >
-              <div className="w-16 h-16 rounded-3xl bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto shadow-inner">
-                <CheckCircle2 className="w-8 h-8" />
-              </div>
-              <div>
-                <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 font-mono">
-                  Input Selesai 100%
-                </span>
-                <h3 className="text-base font-extrabold text-slate-900 mt-1">
-                  Seluruh Unit {location === 'RUMDIN' ? 'Rumah Dinas' : 'Istana Wapres'} Lengkap!
-                </h3>
-                <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                  Data berhasil disimpan. Mengalihkan otomatis ke Dashboard...
-                </p>
-              </div>
-              <div className="flex items-center justify-center gap-2 text-xs font-bold text-emerald-700 bg-emerald-50 py-2.5 px-4 rounded-2xl border border-emerald-100">
-                <div className="w-3.5 h-3.5 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
-                <span>Menuju Dashboard</span>
-              </div>
-            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -691,7 +793,7 @@ export const StepInspectionForm: React.FC<StepInspectionFormProps> = ({
                         Penyulang CLOSE
                       </label>
                       <select
-                        value={currentFormData.Status_Penyulang_CLOSE || ''}
+                        value={currentFormData.Status_Penyulang_CLOSE || 'P HAYAM WURUK GI GAMBIR LAMA'}
                         onChange={(e) => handleChange('Status_Penyulang_CLOSE', e.target.value)}
                         className="w-full text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl p-2.5 focus:border-sky-500 focus:bg-white focus:outline-none"
                       >
@@ -706,7 +808,7 @@ export const StepInspectionForm: React.FC<StepInspectionFormProps> = ({
                         Penyulang OPEN
                       </label>
                       <select
-                        value={currentFormData.Status_Penyulang_OPEN || ''}
+                        value={currentFormData.Status_Penyulang_OPEN || 'KOPEL ACO (GH41 P HONGKONG GI BUDI KEMULIAAN)'}
                         onChange={(e) => handleChange('Status_Penyulang_OPEN', e.target.value)}
                         className="w-full text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl p-2.5 focus:border-sky-500 focus:bg-white focus:outline-none"
                       >
@@ -725,7 +827,7 @@ export const StepInspectionForm: React.FC<StepInspectionFormProps> = ({
                         Sumber CLOSE
                       </label>
                       <select
-                        value={currentFormData.Status_Sumber_CLOSE || ''}
+                        value={currentFormData.Status_Sumber_CLOSE || 'GARDU T93'}
                         onChange={(e) => handleChange('Status_Sumber_CLOSE', e.target.value)}
                         className="w-full text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl p-2.5 focus:border-sky-500 focus:bg-white focus:outline-none"
                       >
@@ -740,7 +842,7 @@ export const StepInspectionForm: React.FC<StepInspectionFormProps> = ({
                         Sumber OPEN
                       </label>
                       <select
-                        value={currentFormData.Status_Sumber_OPEN || ''}
+                        value={currentFormData.Status_Sumber_OPEN || 'GARDU T10B'}
                         onChange={(e) => handleChange('Status_Sumber_OPEN', e.target.value)}
                         className="w-full text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl p-2.5 focus:border-sky-500 focus:bg-white focus:outline-none"
                       >
@@ -786,8 +888,8 @@ export const StepInspectionForm: React.FC<StepInspectionFormProps> = ({
                   </div>
                 )}
 
-                {/* Global Status Settings for ACO / Gardu */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
+                {/* Status Settings for ACO / Gardu */}
+                <div className={`grid gap-3 pt-2 ${activeUnit.id === 'Wapres_Gardu_D126' ? 'grid-cols-2 sm:grid-cols-5' : 'grid-cols-1 sm:grid-cols-3'}`}>
                   <div>
                     <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">
                       Alarm
@@ -816,31 +918,49 @@ export const StepInspectionForm: React.FC<StepInspectionFormProps> = ({
                     </select>
                   </div>
 
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">
-                      Charging Kubikel
-                    </label>
-                    <select
-                      value={currentFormData.Global_Charging || 'YA'}
-                      onChange={(e) => handleChange('Global_Charging', e.target.value)}
-                      className="w-full text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl p-2.5 focus:border-sky-500 focus:bg-white focus:outline-none"
-                    >
-                      <option value="YA">YA</option>
-                      <option value="TIDAK">TIDAK</option>
-                    </select>
-                  </div>
+                  {activeUnit.id === 'Wapres_Gardu_D126' && (
+                    <>
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                          Charging Kubikel
+                        </label>
+                        <select
+                          value={currentFormData.Global_Charging || 'YA'}
+                          onChange={(e) => handleChange('Global_Charging', e.target.value)}
+                          className="w-full text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl p-2.5 focus:border-sky-500 focus:bg-white focus:outline-none"
+                        >
+                          <option value="YA">YA</option>
+                          <option value="TIDAK">TIDAK</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                          Remote Kubikel
+                        </label>
+                        <select
+                          value={currentFormData.Global_Remote || 'AUTO'}
+                          onChange={(e) => handleChange('Global_Remote', e.target.value)}
+                          className="w-full text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl p-2.5 focus:border-sky-500 focus:bg-white focus:outline-none"
+                        >
+                          <option value="AUTO">AUTO</option>
+                          <option value="LOCAL">LOCAL</option>
+                        </select>
+                      </div>
+                    </>
+                  )}
 
                   <div>
                     <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">
-                      Remote Kubikel
+                      Lampu Indikator
                     </label>
                     <select
-                      value={currentFormData.Global_Remote || 'AUTO'}
-                      onChange={(e) => handleChange('Global_Remote', e.target.value)}
+                      value={currentFormData.Global_Lampu || 'ON'}
+                      onChange={(e) => handleChange('Global_Lampu', e.target.value)}
                       className="w-full text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl p-2.5 focus:border-sky-500 focus:bg-white focus:outline-none"
                     >
-                      <option value="AUTO">AUTO</option>
-                      <option value="LOCAL">LOCAL</option>
+                      <option value="ON">ON</option>
+                      <option value="OFF">OFF</option>
                     </select>
                   </div>
                 </div>

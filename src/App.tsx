@@ -182,16 +182,39 @@ export default function App() {
     setSelectedUnitId(unitId);
     setAvailableUnits(MASTER_UNITS.filter((u) => u.location === unit.location));
 
-    const existingInfo = dashboardState[unitId];
-    if (existingInfo?.petugas) {
-      const parts = existingInfo.petugas.split(' , ').map((s) => s.trim());
-      setSelectedOfficers(parts);
-    } else {
-      const savedOfficers = getStoredOfficers(unit.location, shift);
-      setSelectedOfficers(savedOfficers);
+    // Jika sudah ada data / petugas awal, tampilkan petugas yang di awal input data
+    const existingPetugas = dashboardState[unitId]?.petugas || dataLengkap[unitId]?.Nama_Petugas;
+    if (existingPetugas && typeof existingPetugas === 'string' && existingPetugas.trim() !== '' && existingPetugas.trim() !== '-') {
+      const parts = existingPetugas.split(',').map((s) => s.trim()).filter(Boolean);
+      if (parts.length > 0) {
+        setSelectedOfficers(parts);
+        setStep('INSPECTION');
+        return;
+      }
     }
 
+    const savedOfficers = getStoredOfficers(unit.location, shift);
+    setSelectedOfficers(savedOfficers);
     setStep('INSPECTION');
+  };
+
+  // Switch unit within inspection form (tampilkan petugas di awal jika unit sudah diinput)
+  const handleSelectUnitInForm = (unitId: string) => {
+    setSelectedUnitId(unitId);
+
+    const existingPetugas = dashboardState[unitId]?.petugas || dataLengkap[unitId]?.Nama_Petugas;
+    if (existingPetugas && typeof existingPetugas === 'string' && existingPetugas.trim() !== '' && existingPetugas.trim() !== '-') {
+      const parts = existingPetugas.split(',').map((s) => s.trim()).filter(Boolean);
+      if (parts.length > 0) {
+        setSelectedOfficers(parts);
+        return;
+      }
+    }
+
+    const savedOfficers = getStoredOfficers(location, shift);
+    if (savedOfficers.length > 0) {
+      setSelectedOfficers(savedOfficers);
+    }
   };
 
   // Step 2: Toggle Officer
@@ -211,10 +234,11 @@ export default function App() {
   // Step 3: Save Inspection Data (Does NOT kick user out of form)
   const handleSaveInspection = async (
     unitId: string, 
-    data: InspectionData
+    data: InspectionData,
+    officersOverride?: string
   ): Promise<{ success: boolean; message: string; jam: string }> => {
     setIsSaving(true);
-    const officersStr = selectedOfficers.join(' , ');
+    const officersStr = officersOverride || (selectedOfficers.length > 0 ? selectedOfficers.join(' , ') : '-');
     const now = new Date();
     const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
@@ -229,14 +253,19 @@ export default function App() {
     };
     setDashboardState(updatedState);
     saveLocalDashboardState(shift, updatedState);
-    saveLocalUnitData(unitId, data, shift);
-    setDataLengkap((prev) => ({ ...prev, [unitId]: data }));
+
+    const dataWithOfficers: InspectionData = {
+      ...data,
+      Nama_Petugas: officersStr
+    };
+    saveLocalUnitData(unitId, dataWithOfficers, shift);
+    setDataLengkap((prev) => ({ ...prev, [unitId]: dataWithOfficers }));
 
     // 1. If offline, save to local queue
     if (!navigator.onLine) {
       saveOfflineRecord({
         unit: unitId,
-        data,
+        data: dataWithOfficers,
         petugas: officersStr,
         lokasi: location,
         shift
@@ -252,7 +281,7 @@ export default function App() {
 
     // 2. If Google Spreadsheet is configured, save directly to Google Sheets!
     if (isSpreadsheetConfigured()) {
-      const sheetRes = await saveSpreadsheetInspection(unitId, data, officersStr, location, shift);
+      const sheetRes = await saveSpreadsheetInspection(unitId, dataWithOfficers, officersStr, location, shift);
       setIsSaving(false);
 
       if (sheetRes.success) {
@@ -265,7 +294,7 @@ export default function App() {
         // Fallback to offline queue
         saveOfflineRecord({
           unit: unitId,
-          data,
+          data: dataWithOfficers,
           petugas: officersStr,
           lokasi: location,
           shift
@@ -475,7 +504,7 @@ export default function App() {
                 locationUnits={MASTER_UNITS.filter((u) => u.location === location)}
                 dashboardState={dashboardState}
                 dataLengkap={dataLengkap}
-                onSelectUnit={(id) => setSelectedUnitId(id)}
+                onSelectUnit={handleSelectUnitInForm}
                 onSave={handleSaveInspection}
                 onBack={() => {
                   setStep('DASHBOARD');

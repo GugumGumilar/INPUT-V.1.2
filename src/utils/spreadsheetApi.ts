@@ -197,6 +197,94 @@ function doPost(e) {
       .setMimeType(ContentService.MimeType.JSON);
   }
 }
+
+// Pastikan fungsi updateLaporanACO mendukung Rumdin Situbondo & Rumdin Dipo secara presisi:
+function updateLaporanACO(namaUnit, data, petugas, jam, shift, tglObj) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var cetak = ss.getSheetByName("LAPORAN_CETAK");
+  if (!cetak) return;
+
+  var hariIni = tglObj.getDate(); 
+  var shiftOffset = (shift.toUpperCase() === "SIANG") ? 1 : (shift.toUpperCase() === "MALAM" ? 2 : 0);
+  var barisTarget = 0;
+  var unitStr = (namaUnit || "").toString();
+
+  if (unitStr.indexOf("Situbondo") !== -1 || unitStr.indexOf("ST12") !== -1) {
+    barisTarget = 105 + ((hariIni - 1) * 3) + shiftOffset;
+  } else if (unitStr.indexOf("Dipo") !== -1) {
+    barisTarget = 204 + ((hariIni - 1) * 3) + shiftOffset;
+  } else if (unitStr.indexOf("Gardu") !== -1 || unitStr.indexOf("D126") !== -1 || unitStr.indexOf("Wapres") !== -1) {
+    barisTarget = 6 + ((hariIni - 1) * 3) + shiftOffset;
+  }
+
+  if (barisTarget > 0) {
+    cetak.getRange(barisTarget, 2).setValue(petugas);
+    cetak.getRange(barisTarget, 4).setValue(jam + " WIB");
+
+    var col5 = "-";
+    var col6 = "-";
+
+    if (unitStr.indexOf("Dipo") !== -1) {
+      col5 = data.Status_T135 || data.T135 || "OPEN";
+      col6 = data.Status_T15N || data.T15N || "CLOSE";
+    } else if (unitStr.indexOf("Situbondo") !== -1 || unitStr.indexOf("ST12") !== -1) {
+      col5 = data.Status_Sumber_CLOSE || data.Sumber_CLOSE || data.Status_Penyulang_CLOSE || "GARDU T93";
+      col6 = data.Status_Sumber_OPEN || data.Sumber_OPEN || data.Status_Penyulang_OPEN || "GARDU T10B";
+    } else {
+      col5 = data.Status_Penyulang_CLOSE || data.Status_Sumber_CLOSE || "P HAYAM WURUK GI GAMBIR LAMA";
+      col6 = data.Status_Penyulang_OPEN || data.Status_Sumber_OPEN || "KOPEL ACO (GH41 P HONGKONG GI BUDI KEMULIAAN)";
+    }
+
+    if (!col5 || col5 === "-") col5 = (unitStr.indexOf("Dipo") !== -1) ? "OPEN" : "GARDU T93";
+    if (!col6 || col6 === "-") col6 = (unitStr.indexOf("Dipo") !== -1) ? "CLOSE" : "GARDU T10B";
+
+    cetak.getRange(barisTarget, 5).setValue(col5);
+    cetak.getRange(barisTarget, 6).setValue(col6);
+
+    var rawAlarm = (data.Global_Alarm || data.Alarm || data.Alarm_Status || data.Status_Alarm || "NORMAL").toString().toUpperCase().trim();
+    var isAlarmActive = rawAlarm === "ALARM" || rawAlarm === "TIDAK NORMAL" || (rawAlarm.indexOf("ALARM") !== -1 && rawAlarm.indexOf("NORMAL") === -1);
+    cetak.getRange(barisTarget, 7).setValue(isAlarmActive ? "ALARM" : "-");
+    cetak.getRange(barisTarget, 8).setValue(isAlarmActive ? "-" : "NORMAL");
+
+    var rawPower = (data.Global_Power || data.Power_ACO || data.Status_Power_ACO || data.Status_Power || "ON").toString().toUpperCase().trim();
+    var isPowerOff = rawPower === "OFF" || rawPower === "MATI";
+    cetak.getRange(barisTarget, 9).setValue(isPowerOff ? "-" : "ON");
+    cetak.getRange(barisTarget, 10).setValue(isPowerOff ? "OFF" : "-");
+
+    var isRumdin = (unitStr.indexOf("Situbondo") !== -1 || unitStr.indexOf("ST12") !== -1 || unitStr.indexOf("Dipo") !== -1);
+    var ketVal = (data.Keterangan && data.Keterangan !== "-") ? data.Keterangan : "AMAN TERKENDALI";
+
+    if (isRumdin) {
+      cetak.getRange(barisTarget, 11).setValue("-");
+      cetak.getRange(barisTarget, 12).setValue("-");
+      cetak.getRange(barisTarget, 13).setValue("-");
+
+      var rawLampu = (data.Global_Lampu || data.Lampu_Indikator || data.Status_Lampu_Indikator || data.Status_Lampu || "ON").toString().toUpperCase().trim();
+      var isLampuOff = rawLampu === "OFF" || rawLampu === "MATI";
+      cetak.getRange(barisTarget, 14).setValue(isLampuOff ? "-" : "ON");
+      cetak.getRange(barisTarget, 15).setValue(isLampuOff ? "OFF" : "-");
+
+      cetak.getRange(barisTarget, 16).setValue(ketVal);
+    } else {
+      var rawCharging = (data.Global_Charging || data.Charging_Kubikel || data.Status_Charging_Kubikel || data.Status_Charging || "YA").toString().toUpperCase().trim();
+      var isChargingTidak = rawCharging === "TIDAK" || rawCharging === "NO" || rawCharging === "T";
+      cetak.getRange(barisTarget, 11).setValue(isChargingTidak ? "-" : "YA");
+      cetak.getRange(barisTarget, 12).setValue(isChargingTidak ? "TIDAK" : "-");
+
+      var rawRemote = (data.Global_Remote || data.Remote_Kubikel || data.Status_Remote_Kubikel || data.Status_Remote || "AUTO").toString().toUpperCase().trim();
+      var isRemoteLocal = rawRemote === "LOCAL" || rawRemote === "LOKAL";
+      cetak.getRange(barisTarget, 13).setValue(isRemoteLocal ? "LOCAL" : "-");
+      cetak.getRange(barisTarget, 14).setValue(isRemoteLocal ? "-" : "AUTO");
+
+      var rawLampu = (data.Global_Lampu || data.Lampu_Indikator || data.Status_Lampu_Indikator || data.Status_Lampu || "ON").toString().toUpperCase().trim();
+      var isLampuOff = rawLampu === "OFF" || rawLampu === "MATI";
+      cetak.getRange(barisTarget, 15).setValue(isLampuOff ? "-" : "ON");
+      cetak.getRange(barisTarget, 16).setValue(isLampuOff ? "OFF" : "-");
+
+      cetak.getRange(barisTarget, 17).setValue(ketVal);
+    }
+  }
+}
 `;
 
 /**
@@ -363,32 +451,92 @@ function updateLaporanACO(namaUnit, data, petugas, jam, shift, tglObj) {
   var shiftOffset = (shift.toUpperCase() === "SIANG") ? 1 : (shift.toUpperCase() === "MALAM" ? 2 : 0);
   var barisTarget = 0;
 
-  if (namaUnit.includes("Gardu") || namaUnit.includes("D126")) barisTarget = 6 + ((hariIni - 1) * 3) + shiftOffset;
-  else if (namaUnit.includes("Situbondo")) barisTarget = 105 + ((hariIni - 1) * 3) + shiftOffset;
-  else if (namaUnit.includes("Dipo")) barisTarget = 204 + ((hariIni - 1) * 3) + shiftOffset;
+  var unitStr = (namaUnit || "").toString();
+
+  // Evaluasi nama unit secara tegas: Situbondo dan Dipo dicek terlebih dahulu
+  if (unitStr.indexOf("Situbondo") !== -1 || unitStr.indexOf("ST12") !== -1) {
+    barisTarget = 105 + ((hariIni - 1) * 3) + shiftOffset;
+  } else if (unitStr.indexOf("Dipo") !== -1) {
+    barisTarget = 204 + ((hariIni - 1) * 3) + shiftOffset;
+  } else if (unitStr.indexOf("Gardu") !== -1 || unitStr.indexOf("D126") !== -1 || unitStr.indexOf("Wapres") !== -1) {
+    barisTarget = 6 + ((hariIni - 1) * 3) + shiftOffset;
+  }
 
   if (barisTarget > 0) {
     cetak.getRange(barisTarget, 2).setValue(petugas);
     cetak.getRange(barisTarget, 4).setValue(jam + " WIB");
 
-    var closeVal = data.Status_Penyulang_CLOSE || data.Status_Sumber_CLOSE || data.Status_T15N || "-";
-    var openVal = data.Status_Penyulang_OPEN || data.Status_Sumber_OPEN || data.Status_T135 || "-";
-    cetak.getRange(barisTarget, 5).setValue(closeVal);
-    cetak.getRange(barisTarget, 6).setValue(openVal);
+    var col5 = "-";
+    var col6 = "-";
 
-    // Pemetaan data gabungan ke kolom Excel Cetak
-    cetak.getRange(barisTarget, 7).setValue(data.Global_Alarm === "TIDAK NORMAL" ? "ALARM" : "-");
-    cetak.getRange(barisTarget, 8).setValue(data.Global_Alarm === "NORMAL" ? "NORMAL" : "-");
-    cetak.getRange(barisTarget, 9).setValue(data.Global_Power === "ON" ? "ON" : "-");
-    cetak.getRange(barisTarget, 10).setValue(data.Global_Power === "OFF" ? "OFF" : "-");
-    cetak.getRange(barisTarget, 11).setValue(data.Global_Charging === "YA" ? "YA" : "-");
-    cetak.getRange(barisTarget, 12).setValue(data.Global_Charging === "TIDAK" ? "TIDAK" : "-");
-    cetak.getRange(barisTarget, 13).setValue(data.Global_Remote === "LOCAL" ? "LOCAL" : "-");
-    cetak.getRange(barisTarget, 14).setValue(data.Global_Remote === "AUTO" ? "AUTO" : "-");
-    cetak.getRange(barisTarget, 15).setValue(data.Global_Lampu === "ON" ? "ON" : "-");
-    cetak.getRange(barisTarget, 16).setValue(data.Global_Lampu === "OFF" ? "OFF" : "-");
+    if (unitStr.indexOf("Dipo") !== -1) {
+      // Dipo: Kolom 5 = Status T135, Kolom 6 = Status T15N
+      col5 = data.Status_T135 || data.T135 || "OPEN";
+      col6 = data.Status_T15N || data.T15N || "CLOSE";
+    } else if (unitStr.indexOf("Situbondo") !== -1 || unitStr.indexOf("ST12") !== -1) {
+      // Situbondo: Kolom 5 = Sumber CLOSE, Kolom 6 = Sumber OPEN
+      col5 = data.Status_Sumber_CLOSE || data.Sumber_CLOSE || data.Status_Penyulang_CLOSE || "GARDU T93";
+      col6 = data.Status_Sumber_OPEN || data.Sumber_OPEN || data.Status_Penyulang_OPEN || "GARDU T10B";
+    } else {
+      // Wapres Gardu D126: Kolom 5 = Penyulang CLOSE, Kolom 6 = Penyulang OPEN
+      col5 = data.Status_Penyulang_CLOSE || data.Status_Sumber_CLOSE || "P HAYAM WURUK GI GAMBIR LAMA";
+      col6 = data.Status_Penyulang_OPEN || data.Status_Sumber_OPEN || "KOPEL ACO (GH41 P HONGKONG GI BUDI KEMULIAAN)";
+    }
 
-    cetak.getRange(barisTarget, 17).setValue(data.Keterangan || "-");
+    if (!col5 || col5 === "-") col5 = (unitStr.indexOf("Dipo") !== -1) ? "OPEN" : "GARDU T93";
+    if (!col6 || col6 === "-") col6 = (unitStr.indexOf("Dipo") !== -1) ? "CLOSE" : "GARDU T10B";
+
+    cetak.getRange(barisTarget, 5).setValue(col5);
+    cetak.getRange(barisTarget, 6).setValue(col6);
+
+    // Alarm: Kolom 7 (ALARM), Kolom 8 (NORMAL)
+    var rawAlarm = (data.Global_Alarm || data.Alarm || data.Alarm_Status || data.Status_Alarm || "NORMAL").toString().toUpperCase().trim();
+    var isAlarmActive = rawAlarm === "ALARM" || rawAlarm === "TIDAK NORMAL" || (rawAlarm.indexOf("ALARM") !== -1 && rawAlarm.indexOf("NORMAL") === -1);
+    cetak.getRange(barisTarget, 7).setValue(isAlarmActive ? "ALARM" : "-");
+    cetak.getRange(barisTarget, 8).setValue(isAlarmActive ? "-" : "NORMAL");
+
+    // Power ACO: Kolom 9 (ON), Kolom 10 (OFF)
+    var rawPower = (data.Global_Power || data.Power_ACO || data.Status_Power_ACO || data.Status_Power || "ON").toString().toUpperCase().trim();
+    var isPowerOff = rawPower === "OFF" || rawPower === "MATI";
+    cetak.getRange(barisTarget, 9).setValue(isPowerOff ? "-" : "ON");
+    cetak.getRange(barisTarget, 10).setValue(isPowerOff ? "OFF" : "-");
+
+    var isRumdin = (unitStr.indexOf("Situbondo") !== -1 || unitStr.indexOf("ST12") !== -1 || unitStr.indexOf("Dipo") !== -1);
+    var ketVal = (data.Keterangan && data.Keterangan !== "-") ? data.Keterangan : "AMAN TERKENDALI";
+
+    if (isRumdin) {
+      // Pada sheet LAPORAN_CETAK Rumdin (Situbondo & Dipo):
+      // Kolom 11, 12, 13 adalah strip '-' (tidak ada kubikel)
+      cetak.getRange(barisTarget, 11).setValue("-");
+      cetak.getRange(barisTarget, 12).setValue("-");
+      cetak.getRange(barisTarget, 13).setValue("-");
+
+      // Kolom 14 = Lampu ON, Kolom 15 = Lampu OFF
+      var rawLampu = (data.Global_Lampu || data.Lampu_Indikator || data.Status_Lampu_Indikator || data.Status_Lampu || "ON").toString().toUpperCase().trim();
+      var isLampuOff = rawLampu === "OFF" || rawLampu === "MATI";
+      cetak.getRange(barisTarget, 14).setValue(isLampuOff ? "-" : "ON");
+      cetak.getRange(barisTarget, 15).setValue(isLampuOff ? "OFF" : "-");
+
+      cetak.getRange(barisTarget, 16).setValue(ketVal);
+    } else {
+      // Wapres Gardu D126 (ada Charging Kubikel & Remote Kubikel)
+      var rawCharging = (data.Global_Charging || data.Charging_Kubikel || data.Status_Charging_Kubikel || data.Status_Charging || "YA").toString().toUpperCase().trim();
+      var isChargingTidak = rawCharging === "TIDAK" || rawCharging === "NO" || rawCharging === "T";
+      cetak.getRange(barisTarget, 11).setValue(isChargingTidak ? "-" : "YA");
+      cetak.getRange(barisTarget, 12).setValue(isChargingTidak ? "TIDAK" : "-");
+
+      var rawRemote = (data.Global_Remote || data.Remote_Kubikel || data.Status_Remote_Kubikel || data.Status_Remote || "AUTO").toString().toUpperCase().trim();
+      var isRemoteLocal = rawRemote === "LOCAL" || rawRemote === "LOKAL";
+      cetak.getRange(barisTarget, 13).setValue(isRemoteLocal ? "LOCAL" : "-");
+      cetak.getRange(barisTarget, 14).setValue(isRemoteLocal ? "-" : "AUTO");
+
+      var rawLampu = (data.Global_Lampu || data.Lampu_Indikator || data.Status_Lampu_Indikator || data.Status_Lampu || "ON").toString().toUpperCase().trim();
+      var isLampuOff = rawLampu === "OFF" || rawLampu === "MATI";
+      cetak.getRange(barisTarget, 15).setValue(isLampuOff ? "-" : "ON");
+      cetak.getRange(barisTarget, 16).setValue(isLampuOff ? "OFF" : "-");
+
+      cetak.getRange(barisTarget, 17).setValue(ketVal);
+    }
   }
 }
 
@@ -454,14 +602,59 @@ function ambilDataDariSheetCetak(unitObj, hari, shiftOffset, namaUnit) {
     obj["Backup_Hours"] = dataBaris[15]; obj["Backup_Minutes"] = dataBaris[16];
     obj["Keterangan"] = dataBaris[17];
   } else {
-    obj["Status_Penyulang_CLOSE"] = dataBaris[4]; obj["Status_Sumber_CLOSE"] = dataBaris[4]; obj["Status_T15N"] = dataBaris[4];
-    obj["Status_Penyulang_OPEN"] = dataBaris[5]; obj["Status_Sumber_OPEN"] = dataBaris[5]; obj["Status_T135"] = dataBaris[5];
-    obj["Alarm_Status_Tidak_Normal"] = dataBaris[6]; obj["Alarm_Status_Normal"] = dataBaris[7];
-    obj["Status_Power_ACO_ON"] = dataBaris[8]; obj["Status_Power_ACO_OFF"] = dataBaris[9];
-    obj["Status_Charging_Kubikel_YA"] = dataBaris[10]; obj["Status_Charging_Kubikel_TIDAK"] = dataBaris[11];
-    obj["Status_Remote_Kubikel_LOCAL"] = dataBaris[12]; obj["Status_Remote_Kubikel_AUTO"] = dataBaris[13];
-    obj["Lampu_Indikator_ON"] = dataBaris[14]; obj["Lampu_Indikator_OFF"] = dataBaris[15];
-    obj["Keterangan"] = dataBaris[16];
+    var isRumdin = (namaUnit.indexOf("Situbondo") !== -1 || namaUnit.indexOf("ST12") !== -1 || namaUnit.indexOf("Dipo") !== -1);
+    
+    if (isRumdin) {
+      if (namaUnit.indexOf("Dipo") !== -1) {
+        obj["Status_T135"] = dataBaris[4] || "OPEN";
+        obj["Status_T15N"] = dataBaris[5] || "CLOSE";
+        obj["Status_Sumber_CLOSE"] = obj["Status_T135"];
+        obj["Status_Sumber_OPEN"] = obj["Status_T15N"];
+        obj["Status_Penyulang_CLOSE"] = obj["Status_T135"];
+        obj["Status_Penyulang_OPEN"] = obj["Status_T15N"];
+      } else {
+        obj["Status_Sumber_CLOSE"] = dataBaris[4] || "GARDU T93";
+        obj["Status_Sumber_OPEN"] = dataBaris[5] || "GARDU T10B";
+        obj["Status_Penyulang_CLOSE"] = obj["Status_Sumber_CLOSE"];
+        obj["Status_Penyulang_OPEN"] = obj["Status_Sumber_OPEN"];
+      }
+
+      var alarmVal = (dataBaris[6] === "ALARM" || dataBaris[7] === "TIDAK NORMAL") ? "TIDAK NORMAL" : "NORMAL";
+      var powerVal = (dataBaris[9] === "OFF") ? "OFF" : "ON";
+      var lampuVal = (dataBaris[14] === "OFF") ? "OFF" : "ON";
+
+      obj["Global_Alarm"] = alarmVal;
+      obj["Global_Power"] = powerVal;
+      obj["Global_Lampu"] = lampuVal;
+      obj["Alarm"] = alarmVal;
+      obj["Power_ACO"] = powerVal;
+      obj["Lampu_Indikator"] = lampuVal;
+      obj["Keterangan"] = dataBaris[15] || "AMAN TERKENDALI";
+    } else {
+      obj["Status_Penyulang_CLOSE"] = dataBaris[4] || "P HAYAM WURUK GI GAMBIR LAMA";
+      obj["Status_Penyulang_OPEN"] = dataBaris[5] || "KOPEL ACO (GH41 P HONGKONG GI BUDI KEMULIAAN)";
+      obj["Status_Sumber_CLOSE"] = obj["Status_Penyulang_CLOSE"];
+      obj["Status_Sumber_OPEN"] = obj["Status_Penyulang_OPEN"];
+
+      var alarmVal = (dataBaris[6] === "ALARM" || dataBaris[7] === "TIDAK NORMAL") ? "TIDAK NORMAL" : "NORMAL";
+      var powerVal = (dataBaris[9] === "OFF") ? "OFF" : "ON";
+      var chargingVal = (dataBaris[11] === "TIDAK") ? "TIDAK" : "YA";
+      var remoteVal = (dataBaris[12] === "LOCAL") ? "LOCAL" : "AUTO";
+      var lampuVal = (dataBaris[15] === "OFF") ? "OFF" : "ON";
+
+      obj["Global_Alarm"] = alarmVal;
+      obj["Global_Power"] = powerVal;
+      obj["Global_Charging"] = chargingVal;
+      obj["Global_Remote"] = remoteVal;
+      obj["Global_Lampu"] = lampuVal;
+
+      obj["Alarm"] = alarmVal;
+      obj["Power_ACO"] = powerVal;
+      obj["Charging_Kubikel"] = chargingVal;
+      obj["Remote_Kubikel"] = remoteVal;
+      obj["Lampu_Indikator"] = lampuVal;
+      obj["Keterangan"] = dataBaris[16] || "AMAN TERKENDALI";
+    }
   }
   return obj;
 }
