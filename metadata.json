@@ -1,0 +1,7 @@
+{
+  "name": "PLN Posko Wakil Presiden",
+  "description": "Sistem monitoring operasional dan pelaporan piket kelistrikan Posko Istana dan Rumah Dinas Wakil Presiden dengan UI modern, minimalis, dan animasi transisi halus.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
