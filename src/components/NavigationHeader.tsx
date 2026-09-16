@@ -55,7 +55,7 @@ export const NavigationHeader: React.FC<NavigationHeaderProps> = ({
           </motion.div>
           <div>
             <span className="text-[10px] font-bold tracking-widest text-sky-700 uppercase block font-mono">
-              PLN UP3 CEMPAKA PUTIH
+              PLN UP3 MENTENG
             </span>
             <span className="text-xs font-semibold text-slate-700">
               Posko Siaga VVIP

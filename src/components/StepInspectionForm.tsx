@@ -61,6 +61,7 @@ const getDefaultDataForUnit = (unit?: UnitConfig): InspectionData => {
   }
 
   // Non-UPS / Gardu & ACO
+  const isRumdin = unit.id === 'Rumdin_Situbondo' || unit.id === 'Rumdin_Dipo';
   return {
     Status_Sumber_CLOSE: 'GARDU T93',
     Status_Sumber_OPEN: 'GARDU T10B',
@@ -70,8 +71,10 @@ const getDefaultDataForUnit = (unit?: UnitConfig): InspectionData => {
     Status_T15N: 'CLOSE',
     Global_Alarm: 'NORMAL',
     Global_Power: 'ON',
-    Global_Charging: 'YA',
-    Global_Remote: 'AUTO',
+    Global_Charging: isRumdin ? '-' : 'YA',
+    Global_Remote: isRumdin ? '-' : 'AUTO',
+    Charging_Kubikel: isRumdin ? '-' : 'YA',
+    Remote_Kubikel: isRumdin ? '-' : 'AUTO',
     Global_Lampu: 'ON',
     Keterangan: 'AMAN TERKENDALI'
   };
@@ -98,6 +101,7 @@ export const StepInspectionForm: React.FC<StepInspectionFormProps> = ({
   const [unitOfficerOverrides, setUnitOfficerOverrides] = useState<Record<string, string[]>>({});
   const [showOfficerModal, setShowOfficerModal] = useState<boolean>(false);
   const [saveBanner, setSaveBanner] = useState<{ type: 'success' | 'error'; message: string; unitName: string } | null>(null);
+  const [isAutoRedirecting, setIsAutoRedirecting] = useState<boolean>(false);
 
   const activeUnit = locationUnits.find((u) => u.id === selectedUnitId) || locationUnits[0];
   const isUPS = activeUnit?.type === 'UPS';
@@ -138,19 +142,38 @@ export const StepInspectionForm: React.FC<StepInspectionFormProps> = ({
     const draft = (activeUnit && unitDrafts[activeUnit.id]) || {};
 
     // Filter out invalid/empty/dash values so they never overwrite healthy defaults
+    // Note: For Rumdin Situbondo and Dipo, Charging & Remote Kubikel are '-' by design
+    const isRumdinAco = activeUnit?.id === 'Rumdin_Situbondo' || activeUnit?.id === 'Rumdin_Dipo';
     const cleanSaved: InspectionData = {};
     Object.entries(saved).forEach(([k, v]) => {
-      if (v !== undefined && v !== null && String(v).trim() !== '' && String(v).trim() !== '-') {
+      if (v !== undefined && v !== null && String(v).trim() !== '') {
+        if (String(v).trim() === '-' && !(isRumdinAco && (k.includes('Charging') || k.includes('Remote')))) {
+          return;
+        }
         cleanSaved[k] = v;
       }
     });
 
     const cleanDraft: InspectionData = {};
     Object.entries(draft).forEach(([k, v]) => {
-      if (v !== undefined && v !== null && String(v).trim() !== '' && String(v).trim() !== '-') {
+      if (v !== undefined && v !== null && String(v).trim() !== '') {
+        if (String(v).trim() === '-' && !(isRumdinAco && (k.includes('Charging') || k.includes('Remote')))) {
+          return;
+        }
         cleanDraft[k] = v;
       }
     });
+
+    if (isRumdinAco) {
+      cleanSaved.Global_Charging = '-';
+      cleanSaved.Global_Remote = '-';
+      cleanSaved.Charging_Kubikel = '-';
+      cleanSaved.Remote_Kubikel = '-';
+      cleanDraft.Global_Charging = '-';
+      cleanDraft.Global_Remote = '-';
+      cleanDraft.Charging_Kubikel = '-';
+      cleanDraft.Remote_Kubikel = '-';
+    }
 
     return {
       ...defaults,
@@ -233,10 +256,12 @@ export const StepInspectionForm: React.FC<StepInspectionFormProps> = ({
       }
 
       // Pastikan semua parameter status ACO terisi dengan tegas & valid
+      const isRumdin = activeUnit.id === 'Rumdin_Situbondo' || activeUnit.id === 'Rumdin_Dipo';
+      // KUSUS ACO Rumdin Situbondo & Rumdin Dipo: Charging Kubikel dan Remote Kubikel BIARKAN "-" KARENA BUKAN GARDU, TAPI ACO TR
       const alarmVal = (!finalData.Global_Alarm || finalData.Global_Alarm === '-') ? 'NORMAL' : finalData.Global_Alarm;
       const powerVal = (!finalData.Global_Power || finalData.Global_Power === '-') ? 'ON' : finalData.Global_Power;
-      const chargingVal = (!finalData.Global_Charging || finalData.Global_Charging === '-') ? 'YA' : finalData.Global_Charging;
-      const remoteVal = (!finalData.Global_Remote || finalData.Global_Remote === '-') ? 'AUTO' : finalData.Global_Remote;
+      const chargingVal = isRumdin ? '-' : ((!finalData.Global_Charging || finalData.Global_Charging === '-') ? 'YA' : finalData.Global_Charging);
+      const remoteVal = isRumdin ? '-' : ((!finalData.Global_Remote || finalData.Global_Remote === '-') ? 'AUTO' : finalData.Global_Remote);
       const lampuVal = (!finalData.Global_Lampu || finalData.Global_Lampu === '-') ? 'ON' : finalData.Global_Lampu;
       const ketVal = (!finalData.Keterangan || finalData.Keterangan === '-') ? 'AMAN TERKENDALI' : finalData.Keterangan;
 
@@ -296,8 +321,13 @@ export const StepInspectionForm: React.FC<StepInspectionFormProps> = ({
         setTimeout(() => {
           onSelectUnit(pendingUnits[0].id);
         }, 500);
+      } else {
+        // Seluruh unit tim ini telah lengkap! Tampilkan auto-redirect overlay dan arahkan ke Dashboard
+        setIsAutoRedirecting(true);
+        setTimeout(() => {
+          onBack();
+        }, 1800);
       }
-      // Jika semua unit sudah selesai atau sedang edit, user tetap di form tanpa pop-up pengalihan
     } else {
       setSaveBanner({
         type: 'error',
@@ -560,6 +590,48 @@ export const StepInspectionForm: React.FC<StepInspectionFormProps> = ({
                 <span>Menuju Dashboard</span>
               </div>
             </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Save Notification Banner for single unit saves */}
+      <AnimatePresence>
+        {saveBanner && !isAutoRedirecting && (
+          <motion.div
+            initial={{ opacity: 0, y: -10, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -10, scale: 0.97 }}
+            className={`p-3.5 rounded-2xl border flex items-center justify-between gap-3 shadow-sm ${
+              saveBanner.type === 'success'
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                : 'bg-rose-50 border-rose-200 text-rose-900'
+            }`}
+          >
+            <div className="flex items-center gap-2.5">
+              {saveBanner.type === 'success' ? (
+                <div className="w-7 h-7 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0">
+                  <CheckCheck className="w-4 h-4" />
+                </div>
+              ) : (
+                <div className="w-7 h-7 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0">
+                  <ShieldAlert className="w-4 h-4" />
+                </div>
+              )}
+              <div className="text-xs">
+                <span className="font-bold block">
+                  {saveBanner.type === 'success' ? 'Data Berhasil Disimpan!' : 'Perhatian Saat Menyimpan'}
+                </span>
+                <span className="font-medium text-[11px] opacity-90">
+                  {saveBanner.message}
+                </span>
+              </div>
+            </div>
+            <button
+              onClick={() => setSaveBanner(null)}
+              className="text-xs font-bold opacity-60 hover:opacity-100 px-2 py-1"
+            >
+              Tutup
+            </button>
           </motion.div>
         )}
       </AnimatePresence>
